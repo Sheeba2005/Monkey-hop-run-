@@ -1,0 +1,206 @@
+import pygame
+import random
+import time
+
+pygame.init()
+
+clock = pygame.time.Clock()
+fps = 60
+
+# Game window
+tile_size = 50
+cols = 20
+margin = 100
+screen_width = tile_size * cols
+screen_height = (tile_size * cols) + margin
+
+screen = pygame.display.set_mode((screen_width, screen_height))
+pygame.display.set_caption('Rail Rush Clone')
+
+# Function to load images with error handling
+def load_image(path, size=None):
+    try:
+        image = pygame.image.load(path)
+        if size:
+            image = pygame.transform.scale(image, size)
+        return image
+    except pygame.error as e:
+        print(f"Unable to load image at {path}. Error: {e}")
+        return None
+
+# Load images
+bg_img = load_image(r'C:\Users\sheeb\OneDrive\Desktop\Documents\bg.jpg', (screen_width, screen_height - margin))
+wood_img = load_image(r'C:\Users\sheeb\OneDrive\Desktop\Documents\obstacle.jpg', (tile_size, tile_size))
+banana_img = load_image(r'C:\Users\sheeb\OneDrive\Desktop\Documents\banana.jpg', (tile_size, tile_size))
+monkey_img = load_image(r'C:\Users\sheeb\OneDrive\Desktop\Documents\monkey.jpg', (tile_size * 2, int(tile_size * 3)))
+
+# Define game variables
+score = 0
+gravity = 1
+game_over = False
+
+# Define colors
+white = (255, 255, 255)
+green = (144, 201, 120)
+black = (0, 0, 0)
+
+font = pygame.font.SysFont('Futura', 24)
+
+# Player class
+class Player():
+    def __init__(self, x, y):
+        self.rect = pygame.Rect(x, y, tile_size * 2, int(tile_size * 3))
+        self.vel_y = 0
+        self.jump_power = 15
+        self.jump_count = 0
+        self.max_jumps = 3  # Max number of times the up arrow can be pressed to increase the jump height
+        self.in_air = True
+
+    def move(self):
+        dx = 0
+        dy = 0
+
+        # Get key presses
+        key = pygame.key.get_pressed()
+        if key[pygame.K_UP] and self.jump_count < self.max_jumps:
+            if not self.in_air:
+                self.vel_y = -self.jump_power
+                self.in_air = True
+            else:
+                self.vel_y = -self.jump_power * (self.max_jumps - self.jump_count)  # Increase jump height
+            self.jump_count += 1
+        if key[pygame.K_LEFT]:
+            dx = -5
+        if key[pygame.K_RIGHT]:
+            dx = 5
+
+        # Gravity
+        self.vel_y += gravity
+        if self.vel_y > 10:
+            self.vel_y = 10
+        dy += self.vel_y
+
+        # Update player position
+        self.rect.x += dx
+        self.rect.y += dy
+
+        # Collision with ground
+        if self.rect.bottom > screen_height - margin:
+            self.rect.bottom = screen_height - margin
+            dy = 0
+            self.in_air = False
+            self.jump_count = 0  # Reset jump count when on the ground
+
+        # Draw the player
+        screen.blit(monkey_img, self.rect.topleft)
+
+        return dx, dy
+
+# Obstacle class
+class Obstacle(pygame.sprite.Sprite):
+    def __init__(self, x, y):
+        pygame.sprite.Sprite.__init__(self)
+        self.image = wood_img
+        self.rect = self.image.get_rect()
+        self.rect.x = x
+        self.rect.y = y
+
+    def update(self):
+        self.rect.x -= 5
+        if self.rect.right < 0:
+            self.kill()
+
+# Banana class
+class Banana(pygame.sprite.Sprite):
+    def __init__(self, x, y):
+        pygame.sprite.Sprite.__init__(self)
+        self.image = banana_img
+        self.rect = self.image.get_rect()
+        self.rect.x = x
+        self.rect.y = y
+
+    def update(self):
+        self.rect.y += 5  # Falling speed
+        if self.rect.top > screen_height:
+            self.kill()
+
+# Create sprite groups
+obstacle_group = pygame.sprite.Group()
+banana_group = pygame.sprite.Group()
+player = Player(screen_width // 2 - tile_size, screen_height - margin - tile_size * 1.5)
+
+# Function to draw text
+def draw_text(text, font, text_col, x, y):
+    img = font.render(text, True, text_col)
+    screen.blit(img, (x, y))
+
+# Timer variables
+last_banana_time = time.time()
+obstacle_spawn_interval = 15  # 15 bananas
+
+# Main game loop
+run = True
+banana_counter = 0
+
+while run:
+    clock.tick(fps)
+
+    # Draw background
+    screen.fill(green)
+    if bg_img:
+        screen.blit(bg_img, (0, 0))
+
+    # Draw black road in the center
+    road_width = screen_width // 4
+    road_height = tile_size
+    road_x = (screen_width - road_width) // 2
+    road_y = screen_height - margin - tile_size
+    pygame.draw.rect(screen, black, (road_x, road_y, road_width, road_height))
+
+    # Draw player
+    dx, dy = player.move()
+
+    # Update and draw groups
+    obstacle_group.update()
+    obstacle_group.draw(screen)
+    banana_group.update()
+    banana_group.draw(screen)
+
+    # Check for collision with obstacles
+    if pygame.sprite.spritecollide(player, obstacle_group, False):
+        game_over = True
+
+    # Check for collision with bananas
+    if pygame.sprite.spritecollide(player, banana_group, True):
+        score += 1
+        banana_counter += 1
+        last_banana_time = time.time()  # Update timer when banana is caught
+
+    # Draw the score
+    draw_text(f'Score: {score}', font, white, tile_size, screen_height - 60)
+
+    # Generate new bananas
+    if random.randint(1, 50) == 1:
+        banana_group.add(Banana(random.randint(0, screen_width - tile_size), -tile_size))
+
+    # Check if it's time to spawn a new obstacle
+    if banana_counter >= obstacle_spawn_interval:
+        obstacle_group.add(Obstacle(screen_width, screen_height - margin - tile_size * 2))
+        banana_counter = 0  # Reset the banana counter after spawning an obstacle
+
+    # Event handler
+    for event in pygame.event.get():
+        # Quit game
+        if event.type == pygame.QUIT:
+            run = False
+
+    if game_over:
+        draw_text('Game Over', font, white, screen_width // 2 - 100, screen_height // 2)
+        pygame.display.update()
+        pygame.time.wait(2000)
+        run = False
+
+    # Update game display window
+    pygame.display.update()
+
+pygame.quit()
